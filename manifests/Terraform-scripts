@@ -1,0 +1,157 @@
+Terraform Scripts Used
+---
+ provider.tf
+ terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+ }
+ provider "aws" {
+  region = "ap-south-1"
+ }
+
+---
+
+variable.tf
+
+variable "aws_region" {
+  description = "AWS region where the EKS cluster will be created"
+  type        = string
+  default     = "ap-south-1"
+}
+
+variable "cluster_name" {
+  description = "Name of the EKS Cluster"
+  type        = string
+  default     = "assessment-eks-cluster"
+}
+
+variable "cluster_version" {
+  description = "Kubernetes version for EKS"
+  type        = string
+  default     = "1.28"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "private_subnets" {
+  description = "Private subnet CIDR blocks"
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+}
+
+variable "public_subnets" {
+  description = "Public subnet CIDR blocks"
+  type        = list(string)
+  default     = ["10.0.101.0/24", "10.0.102.0/24"]
+}
+
+variable "desired_size" {
+  description = "Desired number of worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "min_size" {
+  description = "Minimum number of worker nodes"
+  type        = number
+  default     = 1
+}
+
+variable "max_size" {
+  description = "Maximum number of worker nodes"
+  type        = number
+  default     = 3
+}
+
+variable "instance_type" {
+  description = "EC2 instance type for worker nodes"
+  type        = string
+  default     = "t3.medium"
+}
+
+ 
+
+---
+ main.tf
+ data "aws_availability_zones" "available" {}
+ module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+  name = "assessment-vpc"
+  cidr = "10.0.0.0/16"
+  azs             = slice(data.aws_availability_zones.available.names, 0, 2)
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
+  enable_nat_gateway = true
+  single_nat_gateway = true
+ }
+ module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 20.0"
+  cluster_name    = var.cluster_name
+  cluster_version = "1.28"
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+  eks_managed_node_groups = {
+    default = {
+      desired_size   = 2
+      instance_types = ["t3.medium"]
+    }
+  }
+ }
+---
+output.tf
+
+output "cluster_name" {
+  description = "EKS Cluster Name"
+  value       = module.eks.cluster_name
+}
+
+output "cluster_endpoint" {
+  description = "EKS Cluster API Server Endpoint"
+  value       = module.eks.cluster_endpoint
+}
+
+output "cluster_certificate_authority" {
+  description = "EKS Cluster CA Certificate"
+  value       = module.eks.cluster_certificate_authority_data
+}
+
+output "cluster_arn" {
+  description = "EKS Cluster ARN"
+  value       = module.eks.cluster_arn
+}
+
+output "vpc_id" {
+  description = "VPC ID created for the EKS cluster"
+  value       = module.vpc.vpc_id
+}
+
+output "private_subnets" {
+  description = "Private Subnets IDs"
+  value       = module.vpc.private_subnets
+}
+
+output "public_subnets" {
+  description = "Public Subnets IDs"
+  value       = module.vpc.public_subnets
+}
+
+output "node_group_arn" {
+  description = "EKS Node Group ARN"
+  value       = module.eks.eks_managed_node_groups["default"].node_group_arn
+}
+
+output "kubectl_config_command" {
+  description = "Command to configure kubectl"
+  value = "aws eks update-kubeconfig --region ap-south-1 --name ${module.eks.cluster_name}"
+}
+
